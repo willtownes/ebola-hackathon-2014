@@ -9,3 +9,9 @@
 
 # RStudio files
 .Rproj.user/
+.Rproj.user
+
+#big original data files
+data/original
+
+*.DS_Store
