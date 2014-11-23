@@ -119,3 +119,12 @@ hist(resid)
 which(resid==min(resid))
 #observation 4 may be outlier
 ```
+Try using principal components instead
+```{r}
+x.pc<-svd(x)$u[,1:3]
+cv.lars(x.pc,y,K=10,type="lar",use.Gram=FALSE)
+cv.lars(x.pc,y,K=5,type="lar",use.Gram=FALSE)
+model<-lars(x.pc,y,type="lar",use.Gram=FALSE)
+summary(model)
+```
+Principle Components also not significant
