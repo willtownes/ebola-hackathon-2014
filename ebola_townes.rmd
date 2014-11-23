@@ -7,6 +7,7 @@ output: html_document
 
 ```{r}
 library(plyr)
+library(lars)
 ```
 Data Cleaning
 ```{r}
@@ -45,5 +46,76 @@ drops<-c("X","pos","country_code","iso_code","gdlcode","region","sdr_level")
 covariates<-covariates[,!(colnames(covariates) %in% drops)]
 covariates<-covariates[,c(31,32,1,2,3:30,33:36)]
 #write out cleaned covariates data
-write.csv(covariates,"data/covariates2.csv")
+#write.csv(covariates,"data/covariates2.csv")
+#covariates<-read.csv("data/covariates2.csv",header=TRUE)
+cor(covariates[,6:23])
+#use edyr gender difference instead of separate variables, since both highly correlated with edyr
+covariates<-within(covariates,edyr_gender_diff<-edyr_male-edyr_fem)
+drops<-c("edyr_fem","edyr_male")
+covariates<-within(covariates,age_under_20<-age09+age1019)
+covariates<-within(covariates,age_over_60<-age6069+age7079+age90hi)
+drops<-c(drops,"age09","age1019","age2029","age3039","age4049","age5059","age6069","age7079","age8089","age90hi")
+covariates<-covariates[,!(colnames(covariates) %in% drops)]
+covariates<-covariates[,-1] #drop "X" column
+cor(covariates[,5:ncol(covariates)])
+#small house highly inv. correlated with large house. Drop small house
+drops<-c("small_house")
+#floor quality highly corr with bad_floor. Drop bad_floor
+drops<-c(drops,"bad_floor")
+#bad_toilet correlated with flush_toilet (and subjective), drop bad_toilet
+drops<-c(drops,"bad_toilet")
+#iwi, tv, phone, electr, floor quality, and toilet all highly correlated. Expect we will use only one of these. Not clear which to drop though.
+covariates<-covariates[,!(colnames(covariates) %in% drops)]
+meta<-covariates[,c(1,2,3,4)] #split off non-numeric info
+covariates<-covariates[,-c(2,3,4)]
+#split off religion info
+relig.cols<-c("nChurch","nMission","nMosque","nTemple")
+cov.relig<-covariates[,c("sdr_id",relig.cols)]
+covariates<-covariates[,!(colnames(covariates) %in% relig.cols)]
+#at this point we have 16 potential covariates, and 4 religious covariates applicable only in Liberia
+
+#fitted lambda(response of interest) and population/area data provided by Nick and Leah Comment
+data.lambda<-read.csv("data/fitted_lambda.csv",header=TRUE)
+#remove cases with NA response.
+data.lambda<-data.lambda[complete.cases(data.lambda),]
+#add population density column and log-transform lambdas
+data.lambda<-within(data.lambda,log.lambda<-log(lambda))
+data.lambda$Population<-as.numeric(as.character(data.lambda$Population))
+data.lambda<-within(data.lambda,pop.density<-Population/Area_km2)
+hist(data.lambda$pop.density)
+#highly skewed, use log instead
+data.lambda<-within(data.lambda,log.pop.dens<-log(pop.density))
+#drop descriptive column
+data.lambda<-data.lambda[,-3]
+cor(data.lambda[,2:7])
+#interestingly log.lambda is inv. correlated with population and area but not population density.
+#include log of Area and log of Population
+data.lambda<-within(data.lambda,log.pop<-log(Population))
+data.lambda<-within(data.lambda,log.area<-log(Area_km2))
+cor(data.lambda[,2:9])
+#less collinearity between log pop,area versus pop, area, so use logs and drop original. Also removes skewness. Also remove pop.density columns since linear comb of pop and area on log scale
+hist(data.lambda$log.pop)
+hist(data.lambda$log.area)
+data.lambda<-data.lambda[,-c(3,4,6,7)]
+dat.full<-join(data.lambda,covariates,by="sdr_id")
+```
+Try lasso linear regression with response variables (lambdas- parameter for infectiousness) log-transformed.
+```{r}
+y<-as.vector(dat.full$log.lambda)
+x<-as.matrix(dat.full[,4:ncol(dat.full)])
+colnames(x)<-colnames(dat.full)[4:ncol(dat.full)]
+cv.lars(x,y,K=10,type="lar",use.Gram=FALSE)
+cv.lars(x,y,K=5,type="lar",use.Gram=FALSE)
+model<-lars(x,y,type="lar",use.Gram=FALSE)
+summary(model)
+coef(model)[2,]
+```
+The LASSO based on minimizing cross-validation error chooses only the intercept model (5 or 10 fold CV). The LASSO based on Cp chooses the model with only the log.area term. This suggests 
+```{r}
+yhat<-predict(model,x,2,type="fit")$fit
+resid<-y-yhat
+plot(yhat,resid)
+hist(resid)
+which(resid==min(resid))
+#observation 4 may be outlier
 ```
