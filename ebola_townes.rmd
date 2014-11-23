@@ -5,4 +5,45 @@ date: "November 22, 2014"
 output: html_document
 ---
 
+```{r}
+library(plyr)
+```
+Data Cleaning
+```{r}
+covariates<-read.csv('data/ebola_covariate_data.csv',header=TRUE)
+#drop all columns with all NA
+covariates<-Filter(function(x)!all(is.na(x)), covariates)
+#table(covariates$sdr_level)
 
+ts2<-read.csv('data/original/02.csv',header=TRUE)
+id.map<-read.csv('data/original/01.csv',header=TRUE)
+
+#religious
+cov.relig<-read.csv('data/original/15.csv',header=TRUE)
+head(cov.relig)
+#problem- the SDR_IDs for relig are at lower geographic level (liberia only), need to convert to ADM1 level instead of ADM2
+#cov.relig$sdr_id_adm1<-
+lookup.relig<-unique(cov.relig[,"ADM1_NAME"])
+id.map.relig<-id.map[id.map$level=="ADM1" & id.map$name %in% lookup.relig,c("name","level","id","parent_id")]
+#Rivercess is called "River Cess" in the Covariates table but "Rivercess" in the religion table. From manual inspection, "River Cess" is correct with SDR_ID=77115
+id.map.relig[id.map.relig$name=="Rivercess","id"]<-c(77115)
+id.map.relig<-id.map.relig[1:(nrow(id.map.relig)-1),]
+# change column names to match the religion table
+id.map.relig<-id.map.relig[,c("name","id")]
+colnames(id.map.relig)<-c("ADM1_NAME","parent_sdr_id")
+cov.relig<-join(cov.relig,id.map.relig,by="ADM1_NAME")
+relig.summary<-ddply(cov.relig,c("parent_sdr_id"),summarise,nChurch=sum(TYPE=="Church"),nMission=sum(TYPE=="Mission"),nMosque=sum(TYPE=="Mosque"),nTemple=sum(TYPE=="Temple"))
+colnames(relig.summary)[1]<-"sdr_id"
+#merge religious data into main covariates data
+covariates<-join(covariates,relig.summary,by="sdr_id")
+#remove old data frames to free up memory
+rm(cov.relig,id.map.relig,relig.summary)
+#remove columns with all NA
+covariates<-Filter(function(x)!all(is.na(x)), covariates)
+#remove extraneous columns
+drops<-c("X","pos","country_code","iso_code","gdlcode","region","sdr_level")
+covariates<-covariates[,!(colnames(covariates) %in% drops)]
+covariates<-covariates[,c(31,32,1,2,3:30,33:36)]
+#write out cleaned covariates data
+write.csv(covariates,"data/covariates2.csv")
+```
